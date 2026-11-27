@@ -1412,7 +1412,77 @@ if [ "$PATCH_PERMISSION_CONTROLLER" = "1" ]; then
 else
     echo "PermissionController patch DISABLED by gsi_flags.conf (generic GSI mode)"
 fi
+# === Himax / SM-X110 Touchscreen IDC Support ===
+echo "=== Configuring Himax Touchscreen Input Profiles ==="
+IDC_STAGE="$STAGE/system_usr_idc"
+DATA_IDC="$STAGE/data/system/devices/idc"
+rm -rf "$IDC_STAGE" 2>/dev/null || true
+mkdir -p "$IDC_STAGE" "$DATA_IDC" 2>/dev/null || true
 
+# Preserve any existing .idc files from the read-only GSI rootfs
+if [ -d "$ROOTFS/system/usr/idc" ]; then
+    cp -a "$ROOTFS/system/usr/idc/"* "$IDC_STAGE/" 2>/dev/null || true
+fi
+
+write_himax_idc() {
+    _idc_target="$1"
+    cat > "$_idc_target" <<'HIMAXIDC'
+# Himax Touchscreen Input Device Configuration (SM-X110 GSI)
+device.internal = 1
+
+touch.deviceType = touchScreen
+touch.orientationAware = 1
+
+touch.size.calibration = diameter
+touch.size.scale = 1.0
+touch.size.bias = 0.0
+touch.size.isSummed = 0
+
+touch.pressure.calibration = none
+
+cursor.mode = navigation
+cursor.orientationAware = 1
+keyboard.orientationAware = 1
+HIMAXIDC
+    chmod 644 "$_idc_target" 2>/dev/null || true
+}
+
+# Write baseline Himax / Samsung TSP canonical names
+for _base_idc in himax-touchscreen himax_touchscreen himax-ts himax_ts sec_touchscreen; do
+    write_himax_idc "$IDC_STAGE/${_base_idc}.idc"
+    write_himax_idc "$DATA_IDC/${_base_idc}.idc"
+done
+
+# Dynamically detect the exact kernel evdev name on this SM-X110 revision
+for _inp in /sys/class/input/input*/name; do
+    [ -f "$_inp" ] || continue
+    _raw_name="$(cat "$_inp" 2>/dev/null)"
+    _low_name="$(printf '%s' "$_raw_name" | tr 'A-Z' 'a-z')"
+    case "$_low_name" in
+        *himax*|*hx83*|*tsp*|*touch*)
+            # Android InputDeviceIdentifier canonical filename sanitization
+            _canon="$(printf '%s' "$_raw_name" | sed 's/[^A-Za-z0-9_-]/_/g')"
+            if [ -n "$_canon" ]; then
+                write_himax_idc "$IDC_STAGE/${_canon}.idc"
+                write_himax_idc "$DATA_IDC/${_canon}.idc"
+                echo "HIMAX_IDC: staged ${_canon}.idc (kernel device: '$_raw_name')"
+            fi
+            ;;
+    esac
+done
+
+chown -R 1000:1000 "$STAGE/data/system/devices" 2>/dev/null || true
+chmod 755 "$STAGE/data/system/devices" "$DATA_IDC" 2>/dev/null || true
+$BB chcon -R u:object_r:system_data_file:s0 "$STAGE/data/system/devices" 2>/dev/null || true
+
+if [ -d "$ROOTFS/system/usr/idc" ]; then
+    $BB umount -l "$ROOTFS/system/usr/idc" 2>/dev/null || true
+    if $BB mount --bind "$IDC_STAGE" "$ROOTFS/system/usr/idc" 2>/dev/null; then
+        echo "HIMAX_IDC: bind-mounted $IDC_STAGE -> $ROOTFS/system/usr/idc"
+    else
+        echo "HIMAX_IDC_WARN: bind mount failed for $ROOTFS/system/usr/idc (falling back to /data/system/devices/idc)"
+    fi
+fi
 # 5.9.5-SCRIPTS-START: share folder, density staging, guest-root hook.
 echo "=== 5.9.5. Storage share / density / guest-root ==="
 # SHARE_FOLDER=1 only: create the host shared dir if missing. The host
