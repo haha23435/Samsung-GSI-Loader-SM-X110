@@ -117,7 +117,20 @@ echo "[Pivoted Root] Starting guest SurfaceFlinger..."
 SF_PID=$!
 echo "[Pivoted Root] SurfaceFlinger PID: $SF_PID"
 sleep 2
-
+# Wake Himax / TSP input device if host surfaceflinger blank left it suspended
+for _inp_dir in /sys/class/input/input*; do
+    [ -f "$_inp_dir/name" ] || continue
+    _iname="$(cat "$_inp_dir/name" 2>/dev/null | tr 'A-Z' 'a-z')"
+    case "$_iname" in
+        *himax*|*hx83*|*tsp*|*touch*)
+            if [ -f "$_inp_dir/enabled" ]; then
+                echo 1 > "$_inp_dir/enabled" 2>/dev/null || true
+                echo "[Pivoted Root] HIMAX_WAKE: enabled $_inp_dir ($_iname)"
+            fi
+            ;;
+    esac
+done
+[ -f /sys/class/sec/tsp/enabled ] && echo 1 > /sys/class/sec/tsp/enabled 2>/dev/null || true
 echo "[Pivoted Root] Starting guest BootAnimation..."
 setprop service.bootanim.exit 0
 /system/bin/bootanimation > /data/anim.log 2>&1 &
