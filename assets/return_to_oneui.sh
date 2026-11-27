@@ -356,6 +356,8 @@ else
 fi
 
 echo "=== [5/5] Starting One UI Display & Host Services ==="
+chown root:input /dev/input/event* 2>/dev/null || true
+chmod 0660 /dev/input/event* 2>/dev/null || true
 setprop ctl.start surfaceflinger
 setprop ctl.start zygote
 setprop ctl.start audioserver
