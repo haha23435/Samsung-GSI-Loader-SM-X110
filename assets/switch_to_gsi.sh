@@ -941,6 +941,9 @@ chmod 755 "$STAGE/data/master_inner.sh"
 cp -f "$STAGE/zygote_exec" "$STAGE/data/zygote_exec"
 chmod 755 "$STAGE/data/zygote_exec"
 
+# Ensure guest EventHub can read/write host evdev nodes
+chmod 0666 /dev/input/event* 2>/dev/null || true
+
 # Launch takeover inside isolated mount namespace
 $BB unshare -m $BB sh "$STAGE/data/master_inner.sh" "$STAGE/rootfs" </dev/null >"$STAGE/data/takeover.log" 2>&1 &
 TAKEOVER_PID=$!
@@ -991,6 +994,14 @@ while true; do
             $BB nsenter -t \$PID -m /system/bin/cmd overlay enable-exclusive --category com.android.internal.systemui.navbar.gestural 2>/dev/null || true
             $BB nsenter -t \$PID -m /system/bin/settings put secure navigation_mode 2 2>/dev/null || true
             $BB nsenter -t \$PID -m /system/bin/pm disable android.ext.services/android.ext.services.notification.Assistant 2>/dev/null || true
+            for _inp_dir in /sys/class/input/input*; do
+                [ -f \"\$_inp_dir/name\" ] || continue
+                case \"\$(cat \"\$_inp_dir/name\" 2>/dev/null | tr 'A-Z' 'a-z')\" in
+                    *himax*|*hx83*|*tsp*|*touch*)
+                        [ -f \"\$_inp_dir/enabled\" ] && echo 1 > \"\$_inp_dir/enabled\" 2>/dev/null || true
+                        ;;
+                esac
+            done
             $BB nsenter -t \$PID -m /system/bin/input keyevent 224
             $BB nsenter -t \$PID -m /system/bin/input keyevent 82
             $BB nsenter -t \$PID -m /system/bin/am unlock-user 0
